@@ -25,4 +25,7 @@ if st.button("Search"):
     # Display results
     st.write("### Top 10 Relevant Documents:")
     for doc, score in results:
-        st.write(f"- **{doc.strip()}** (Score:{score:.4f})")
+        snippet = doc.strip()[:200]  # first 200 chars
+        st.write(f"**Score: {score:.4f}**")
+        st.write(snippet + ("..." if len(doc.strip()) > 200 else ""))
+        st.write("---")
