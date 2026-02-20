@@ -2,20 +2,25 @@ import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-# ----------------------------
-# LOAD FILES
-# ----------------------------
-
+# Load precomputed document embeddings
 embeddings = np.load("embeddings.npy")
 
 with open("documents.txt", "r", encoding="utf-8") as f:
     documents = f.readlines()
 
 
-# ----------------------------
-# QUERY EMBEDDING (Simple Version)
-# ----------------------------
+def retrieve_top_k(query_embedding, embeddings, k=10):
+    """Retrieve top-k most similar documents using cosine similarity."""
+    similarities = cosine_similarity(
+        query_embedding.reshape(1, -1),
+        embeddings
+    )[0]
 
+    top_k_indices = similarities.argsort()[-k:][::-1]
+    return [(documents[i], similarities[i]) for i in top_k_indices]
+
+
+# ✅ Slightly smarter query embedding
 def get_query_embedding(query):
     query_words = query.lower().split()
 
@@ -27,38 +32,15 @@ def get_query_embedding(query):
     if matched_indices:
         return np.mean(embeddings[matched_indices], axis=0)
 
-    return np.zeros(embeddings.shape[1])
+    return np.random.normal(0, 0.01, embeddings.shape[1])
 
 
-# ----------------------------
-# DOCUMENT RETRIEVAL
-# ----------------------------
-
-def retrieve_top_k(query_embedding, k=5):
-    similarities = cosine_similarity(
-        query_embedding.reshape(1, -1),
-        embeddings
-    )[0]
-
-    top_indices = similarities.argsort()[-k:][::-1]
-    return [(documents[i], similarities[i]) for i in top_indices]
-
-
-# ----------------------------
-# SIMPLE SENTENCE SPLITTER
-# ----------------------------
-
-def split_sentences(text):
-    return text.replace("\n", " ").split(".")
-
-
-# ----------------------------
-# SENTENCE RANKING
-# ----------------------------
-
+# ✅ NEW: Simple sentence extraction
 def get_top_sentences(doc_text, query, top_n=3):
     query_words = query.lower().split()
-    sentences = split_sentences(doc_text)
+
+    # Simple sentence split
+    sentences = doc_text.replace("\n", " ").split(".")
 
     scored_sentences = []
 
@@ -72,25 +54,26 @@ def get_top_sentences(doc_text, query, top_n=3):
 
 
 # ----------------------------
-# STREAMLIT UI
+# Streamlit UI
 # ----------------------------
 
-st.title("Information Retrieval System")
+st.title("Information Retrieval using Document Embeddings")
 
 query = st.text_input("Enter your query:")
 
 if st.button("Search") and query:
 
     query_embedding = get_query_embedding(query)
-    results = retrieve_top_k(query_embedding, k=5)
+    results = retrieve_top_k(query_embedding, embeddings)
 
-    st.write("## Top Relevant Documents")
+    st.write("### Top 10 Relevant Documents:")
 
-    for doc_text, score in results:
+    for doc, score in results:
 
-        st.write(f"### Document Similarity: {score:.4f}")
+        st.write(f"## Document (Score: {score:.4f})")
 
-        top_sentences = get_top_sentences(doc_text, query)
+        # Show top sentences
+        top_sentences = get_top_sentences(doc, query)
 
         for sentence, sent_score in top_sentences:
             if sent_score > 0:
