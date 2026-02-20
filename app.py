@@ -1,22 +1,15 @@
 import streamlit as st
 import numpy as np
-import nltk
-from nltk.tokenize import word_tokenize, sent_tokenize
-from nltk.corpus import stopwords
-from gensim.models import Word2Vec
 from sklearn.metrics.pairwise import cosine_similarity
+import nltk
+from nltk.tokenize import sent_tokenize
 
-# Download needed NLTK data
 nltk.download("punkt")
-nltk.download("stopwords")
-
-stop_words = set(stopwords.words("english"))
 
 # ----------------------------
 # LOAD FILES
 # ----------------------------
 
-model = Word2Vec.load("word2vec.model")
 embeddings = np.load("embeddings.npy")
 
 with open("documents.txt", "r", encoding="utf-8") as f:
@@ -24,24 +17,31 @@ with open("documents.txt", "r", encoding="utf-8") as f:
 
 
 # ----------------------------
-# HELPER FUNCTIONS
+# QUERY EMBEDDING (DUMMY SAFE VERSION)
 # ----------------------------
 
-def get_embedding(words):
-    vectors = [model.wv[word] for word in words if word in model.wv]
-    if vectors:
-        return np.mean(vectors, axis=0)
-    return np.zeros(model.vector_size)
-
+# Since we are not loading Word2Vec,
+# we approximate query embedding by averaging
+# document embeddings of documents containing query words
 
 def get_query_embedding(query):
-    words = [
-        word.lower()
-        for word in word_tokenize(query)
-        if word.isalnum() and word.lower() not in stop_words
-    ]
-    return get_embedding(words)
+    query_words = query.lower().split()
 
+    matched_indices = [
+        i for i, doc in enumerate(documents)
+        if any(word in doc.lower() for word in query_words)
+    ]
+
+    if matched_indices:
+        return np.mean(embeddings[matched_indices], axis=0)
+
+    # fallback if no match
+    return np.zeros(embeddings.shape[1])
+
+
+# ----------------------------
+# DOCUMENT RETRIEVAL
+# ----------------------------
 
 def retrieve_top_k(query_embedding, k=5):
     similarities = cosine_similarity(
@@ -53,27 +53,22 @@ def retrieve_top_k(query_embedding, k=5):
     return [(documents[i], similarities[i]) for i in top_indices]
 
 
-def get_top_sentences(doc_text, query_embedding, top_n=3):
+# ----------------------------
+# SENTENCE RANKING
+# ----------------------------
+
+def get_top_sentences(doc_text, query, top_n=3):
+    query_words = query.lower().split()
     sentences = sent_tokenize(doc_text)
+
     scored_sentences = []
 
     for sentence in sentences:
-        words = [
-            word.lower()
-            for word in word_tokenize(sentence)
-            if word.isalnum() and word.lower() not in stop_words
-        ]
-
-        sent_embedding = get_embedding(words)
-
-        score = cosine_similarity(
-            query_embedding.reshape(1, -1),
-            sent_embedding.reshape(1, -1)
-        )[0][0]
-
+        score = sum(word in sentence.lower() for word in query_words)
         scored_sentences.append((sentence, score))
 
     scored_sentences.sort(key=lambda x: x[1], reverse=True)
+
     return scored_sentences[:top_n]
 
 
@@ -81,14 +76,13 @@ def get_top_sentences(doc_text, query_embedding, top_n=3):
 # STREAMLIT UI
 # ----------------------------
 
-st.title("Information Retrieval with Semantic Sentence Ranking")
+st.title("Information Retrieval System")
 
 query = st.text_input("Enter your query:")
 
 if st.button("Search") and query:
 
     query_embedding = get_query_embedding(query)
-
     results = retrieve_top_k(query_embedding, k=5)
 
     st.write("## Top Relevant Documents")
@@ -97,9 +91,10 @@ if st.button("Search") and query:
 
         st.write(f"### Document Similarity: {score:.4f}")
 
-        top_sentences = get_top_sentences(doc_text, query_embedding)
+        top_sentences = get_top_sentences(doc_text, query)
 
         for sentence, sent_score in top_sentences:
-            st.write(f"- ({sent_score:.4f}) {sentence}")
+            if sent_score > 0:
+                st.write(f"- {sentence}")
 
         st.write("---")
